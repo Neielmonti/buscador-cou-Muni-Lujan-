@@ -88,7 +88,6 @@
         // --- NUEVA LÓGICA: BUSCAR POR COORDENADAS ---
         function buscarPorCoordenadas() {
             const input = document.getElementById('input-coords').value;
-            // Limpiar espacios y separar por coma
             const coords = input.replace(/\s/g, '').split(',');
 
             if (coords.length === 2) {
@@ -96,18 +95,20 @@
                 const lon = parseFloat(coords[1]);
 
                 if (!isNaN(lat) && !isNaN(lon)) {
-                    // Si ya hay un marcador de una búsqueda anterior, lo borramos
                     if (marcadorActual) {
                         map.removeLayer(marcadorActual);
                     }
 
-                    // Centrar el mapa con una animación y buen nivel de zoom
-                    map.flyTo([lat, lon], 17);
+                    // Agregar un pin en el lugar directamente
+                    marcadorActual = L.marker([lat, lon]).addTo(map);
 
-                    // Agregar un pin en el lugar
-                    marcadorActual = L.marker([lat, lon]).addTo(map)
-                        .bindPopup("Ubicación buscada<br>Hacé clic a un lado para ver el COU.")
-                        .openPopup();
+                    // Escuchar el final de la animación de movimiento para consultar a GeoServer de forma precisa
+                    map.once('moveend', function() {
+                        getFeatureInfoUrl({ lat: lat, lng: lon });
+                    });
+
+                    // Centrar el mapa disparando la animación
+                    map.flyTo([lat, lon], 17);
                 } else {
                     alert("Por favor, ingresá números válidos.");
                 }
@@ -116,8 +117,17 @@
             }
         }
 
-        // 4. Funcionalidad GetFeatureInfo (El clic en el mapa se mantiene igual) [cite: 47]
         map.on('click', function(e) {
+            getFeatureInfoUrl(e);
+        });
+
+        function getFeatureInfoUrl(e){
+            // 1. Detectar si es un evento de Leaflet o un objeto personalizado con latlng
+            const latlng = e.latlng ? e.latlng : L.latLng(e.lat, e.lng);
+            
+            // 2. Obtener el punto de pantalla (si no viene en 'e', lo calculamos con Leaflet)
+            const containerPoint = e.containerPoint ? e.containerPoint : map.latLngToContainerPoint(latlng);
+
             const bounds = map.getBounds();
             const size = map.getSize();
             const bbox = `${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()}`; // [cite: 43]
@@ -132,8 +142,8 @@
             url.searchParams.append('BBOX', bbox); // [cite: 57]
             url.searchParams.append('WIDTH', size.x); // [cite: 58]
             url.searchParams.append('HEIGHT', size.y); // [cite: 59]
-            url.searchParams.append('I', Math.round(e.containerPoint.x)); // [cite: 48, 60]
-            url.searchParams.append('J', Math.round(e.containerPoint.y)); // [cite: 48, 61]
+            url.searchParams.append('I', Math.round(containerPoint.x)); // [cite: 48, 60]
+            url.searchParams.append('J', Math.round(containerPoint.y)); // [cite: 48, 61]
             url.searchParams.append('INFO_FORMAT', 'application/json'); 
 
             fetch(url)
@@ -178,18 +188,18 @@
 
                         // 4. Inyectar el HTML limpio en el popup
                         L.popup()
-                            .setLatLng(e.latlng)
+                            .setLatLng(latlng)
                             .setContent(html)
                             .openOn(map);
                     } else {
-                        L.popup().setLatLng(e.latlng).setContent("No se encontró información en este punto.").openOn(map);
+                        L.popup().setLatLng(latlng).setContent("No se encontró información en este punto.").openOn(map);
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    L.popup().setLatLng(e.latlng).setContent("Error al consultar la capa.").openOn(map);
+                    L.popup().setLatLng(latlng).setContent("Error al consultar la capa.").openOn(map);
                 });
-        });
+        }
     </script>
 </body>
 </html>
