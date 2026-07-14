@@ -53,8 +53,8 @@
 
         <div class="grupo-input">
             <label>Buscar por Dirección</label>
-            <input type="text" id="input-direccion" placeholder="Ej: San Martín 550" disabled title="Próximamente">
-            <button disabled>Buscar Dirección</button>
+            <input type="text" id="input-direccion" placeholder="Ej: San Martín, 550">
+            <button onclick="buscarPorDireccion()">Buscar Dirección</button>
         </div>
 
         <div class="grupo-input">
@@ -114,6 +114,91 @@
                 }
             } else {
                 alert("El formato debe ser: Latitud, Longitud (separado por una coma).");
+            }
+        }
+
+        function buscarPorDireccion() {
+            const direccion = document.getElementById('input-direccion').value.trim();
+            if (direccion) {
+                calle = direccion.split(',')[0].trim(); // Tomar solo la calle antes de la coma, si existe
+                altura = direccion.split(',')[1] ? direccion.split(',')[1].trim() : ''; // Tomar la altura si existe
+                ciudad = 'Luján'; // Ciudad fija
+                pais = 'Argentina'; // País fijo
+                provincia = 'Buenos Aires'; // Provincia fija
+
+                q = `${calle} ${altura}, ${ciudad}, ${provincia}, ${pais}`;
+                // 1. Construir la URL de búsqueda con Nominatim
+                const params = new URLSearchParams({
+                    street: `${calle} ${altura}`,
+                    city: ciudad,
+                    state: provincia,
+                    country: pais,
+                    format: 'json',
+                    addressdetails: 1,
+                    limit: 3
+                });
+            
+                const url = new URL("https://nominatim.openstreetmap.org/search");
+                url.search = params.toString();
+                fetch(url)
+                    .then(response => {
+                        if (!response.ok) throw new Error("Error al consultar Nominatim");
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.length > 0) {
+                            const townResults = [];
+                            for (const townResult in data) {
+                                if (data[townResult].address.town || data[townResult].address.village || data[townResult].address.hamlet) {
+                                    townResults.push(data[townResult].address.town || data[townResult].address.village || data[townResult].address.hamlet);
+                                }
+                            }
+                            
+                            // Da prioridad a la coincidencia exacta con "Luján" en los resultados, ignorando resultados de otras localidades del partido
+                            index = 0;
+                            for (const town of townResults) {
+                                if (town.toLowerCase() === 'luján') {
+                                    break;
+                                }
+                                index += 1;
+                            }
+
+                            console.log("Resultado de Nominatim:", data);
+                            const lat = parseFloat(data[index].lat);
+                            const lon = parseFloat(data[index].lon);
+                            const cityResult = data[index].address.state_district || '';
+                            const stateResult = data[index].address.state || '';
+                            const countryResult = data[index].address.country || '';
+
+
+                            if (cityResult.toLowerCase() !== 'partido de luján' || stateResult.toLowerCase() !== 'buenos aires' || countryResult.toLowerCase() !== 'argentina') {
+                                alert("La dirección ingresada no pertenece a Luján, Buenos Aires, Argentina.");
+                                return;
+                            }
+
+                            if (marcadorActual) {
+                                map.removeLayer(marcadorActual);
+                            }
+
+                            marcadorActual = L.marker([lat, lon]).addTo(map);
+
+                            // Escuchar el final de la animación de movimiento para consultar a GeoServer de forma precisa
+                            map.once('moveend', function() {
+                                getFeatureInfoUrl({ lat: lat, lng: lon });
+                            });
+
+                            // Centrar el mapa disparando la animación
+                            map.flyTo([lat, lon], 17);
+                        } else {
+                            alert("No se encontraron resultados para la dirección ingresada.");
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert("Ocurrió un error al buscar la dirección.");
+                    });
+            } else {
+                alert("Por favor, ingresá una dirección para buscar.");
             }
         }
 
